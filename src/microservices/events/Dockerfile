@@ -1,23 +1,34 @@
-FROM --platform=linux/amd64 mcr.microsoft.com/dotnet/sdk:8.0 AS build
+# --- Этап сборки (Build Stage) ---
+# Используем базовый образ Golang с Alpine для небольшого размера
+FROM golang:1.21-alpine AS builder
+
 WORKDIR /app
 
-# Копирование файлов проекта и восстановление зависимостей
-COPY *.csproj ./.
-RUN dotnet restore
+# Копируем go.mod и go.sum для кэширования зависимостей
+COPY go.mod go.sum ./
+RUN go mod download
 
-# Копирование всего исходного кода и публикация
+# Копируем исходный код
 COPY . .
-# Добавил /p:UseAppHost=false для повышения совместимости в Docker, хотя это необязательно для ASP.NET Core
-RUN dotnet publish -c Release -o /app/publish /p:UseAppHost=false
 
-# --- Этап запуска (Final Stage) ---
-FROM --platform=linux/amd64 mcr.microsoft.com/dotnet/aspnet:8.0 AS final
-WORKDIR /app
-COPY --from=build /app/publish .
+# Компилируем приложение в статический бинарник
+# CGO_ENABLED=0 и флаги -ldflags '-s -w' уменьшают размер бинарника
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-s -w' -o events_service .
 
-# Сервис запускается на порту 8082
-ENV ASPNETCORE_URLS=http://+:8082
+
+# --- Этап запуска (Run Stage) ---
+# Используем минимальный образ Alpine Linux
+FROM alpine:latest
+# Устанавливаем сертификаты CA для HTTPS-запросов
+RUN apk --no-cache add ca-certificates
+
+WORKDIR /root/
+
+# Копируем скомпилированный бинарник из этапа сборки
+COPY --from=builder /app/events_service .
+
+# Открываем порт, который используется в Go-коде (8082)
 EXPOSE 8082
 
-# Определение точки входа (должно быть правильным, если имя DLL совпадает с именем проекта)
-ENTRYPOINT ["dotnet", "EventsService.dll"]
+# Команда запуска
+CMD ["./events_service"]
