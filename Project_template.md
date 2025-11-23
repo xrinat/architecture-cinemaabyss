@@ -59,11 +59,11 @@
 Необходимые тесты для проверки этого API вызываются при запуске npm run test:local из папки tests/postman 
 
 Cкриншот тестов
-[Скриншот тестов консоль](/docs/2TestResult.PNG)
-[Скриншот тестов Postman](/docs/2TestResultPostman.PNG)
+[Скриншот тестов консоль](/src/docs/2TestResult.PNG)
+[Скриншот тестов Postman](/src/docs/2TestResultPostman.PNG)
 
 Cкриншот состояния топиков Kafka из UI http://localhost:8090 
-[Cкриншот топиков Kafka](/docs/2KafkaTopicsState.PNG)
+[Cкриншот топиков Kafka](/src/docs/2KafkaTopicsState.PNG)
 
 
 # Задание 3
@@ -280,7 +280,11 @@ cat .docker/config.json | base64
   Откройте логи event-service и сделайте скриншот обработки событий
 
 #### Шаг 3
-Добавьте сюда скриншота вывода при вызове https://cinemaabyss.example.com/api/movies и  скриншот вывода event-service после вызова тестов.
+Cкриншот тестов для cinemaabyss.example.com после  npm run test:kubernetes
+[Скриншот тестов консоль](/src/docs/2TestResult.PNG)
+
+ и  скриншот вывода event-service после вызова тестов.
+[Скриншот логов](/src/docs/3TestResult_event-service.PNG)
 
 
 # Задание 4
