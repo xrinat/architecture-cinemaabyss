@@ -4,6 +4,15 @@ using System.Text.RegularExpressions;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Явно добавляем appsettings.json и environment variables.
+// Environment variables будут перекрывать значения из JSON.
+builder.Configuration
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+    .AddEnvironmentVariables();
+
+
+
 // --- Конфигурация из переменных окружения (Environment Variables) ---
 var monolithUrl = builder.Configuration.GetValue<string>("MONOLITH_URL");
 var moviesServiceUrl = builder.Configuration.GetValue<string>("MOVIES_SERVICE_URL");
