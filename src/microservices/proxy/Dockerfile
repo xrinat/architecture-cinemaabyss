@@ -1,30 +1,29 @@
-# --- Этап сборки (Build Stage) ---
-FROM golang:1.23-alpine AS builder
+# --- Build Stage ---
+FROM golang:1.23 AS builder
 
 WORKDIR /app
 
-# Копируем go.mod и go.sum для кэширования зависимостей
+# Копируем файлы модулей для кэширования зависимостей
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Копируем исходный код
+# Копируем весь исходный код
 COPY . .
 
-# Компилируем приложение в статический бинарник
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-s -w' -o proxy_service .
+# Компилируем статический бинарник для Linux
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o proxy_service main.go
 
-
-# --- Этап запуска (Run Stage) ---
+# --- Run Stage ---
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
 
-# Копируем скомпилированный бинарник из этапа сборки
+# Копируем бинарник из build stage
 COPY --from=builder /app/proxy_service .
 
-# Открываем порт, который используется в Go-коде (8000)
+# Порт, который слушает Go-сервис
 EXPOSE 8000
 
-# Команда запуска
+# Запуск приложения
 CMD ["./proxy_service"]
