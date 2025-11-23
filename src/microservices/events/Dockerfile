@@ -1,6 +1,6 @@
 # --- Этап сборки (Build Stage) ---
 # Используем базовый образ Golang с Alpine для небольшого размера
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
