@@ -1,58 +1,91 @@
 ﻿package main
 
 import (
-	"fmt"
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+
+	"events-service/internal/api"
+	"events-service/internal/kafka"
+	"events-service/internal/models"
 )
 
-const defaultPort = "8082"
-
-// healthCheck handles /health requests
-func healthCheck(c *gin.Context) {
-	// In a real application, this should check the Kafka connection
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "ok",
-		"message": "Events Service is running",
-	})
-}
-
 func main() {
-	// Set Gin to Release Mode
-	gin.SetMode(gin.ReleaseMode)
-	router := gin.Default()
-
-	// Setup routes
-	router.GET("/health", healthCheck)
-	
-	// Kafka Configuration (simplified for this example)
+	// --- Конфигурация ---
 	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
 	if kafkaBrokers == "" {
-		log.Println("WARNING: KAFKA_BROKERS environment variable is not set. Assuming kafka-service:9092")
-		kafkaBrokers = "kafka-service:9092"
+		log.Fatal("ОШИБКА КОНФИГУРАЦИИ: KAFKA_BROKERS не установлен.")
 	}
-	log.Printf("Starting Kafka consumer connected to: %s", kafkaBrokers)
-
-	// Start HTTP Server
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = defaultPort
-	}
-	addr := fmt.Sprintf(":%s", port)
-
-	log.Printf("Starting Events Service on port %s...", port)
-	s := &http.Server{
-		Addr:         addr,
-		Handler:      router,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		port = "8082" // Значение по умолчанию
 	}
 
-	if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("listen and serve error: %v", err)
+	log.Printf("[EVENTS SERVICE] Kafka Brokers: %s", kafkaBrokers)
+
+	// --- Инициализация сервисов ---
+	producer, err := kafka.NewEventProducer(kafkaBrokers)
+	if err != nil {
+		log.Fatalf("Ошибка инициализации Kafka Producer: %v", err)
 	}
+	defer producer.Close()
+
+	// Consumer запускается как фоновый сервис в отдельной горутине
+	consumerService := kafka.NewEventConsumerService(kafkaBrokers, []string{"movie-events", "user-events", "payment-events"})
+	ctx, cancel := context.WithCancel(context.Background())
+	go consumerService.Execute(ctx)
+	
+	// --- Настройка HTTP пайплайна и контроллеров ---
+	r := chi.NewRouter()
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+
+	// Инжекция зависимостей в контроллер (эквивалент EventsController.cs)
+	eventHandler := api.NewEventsHandler(producer)
+	
+	r.Route("/api/events", func(r chi.Router) {
+		r.Get("/health", eventHandler.GetHealth)
+		r.Post("/movie", eventHandler.CreateMovieEvent)
+		r.Post("/user", eventHandler.CreateUserEvent)
+		r.Post("/payment", eventHandler.CreatePaymentEvent)
+	})
+
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: r,
+	}
+
+	// --- Запуск и Graceful Shutdown ---
+	log.Printf("[EVENTS SERVICE] Запущен на порту %s", port)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Не удалось запустить HTTP-сервер: %v", err)
+		}
+	}()
+
+	// Ждем сигнала завершения
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Получен сигнал завершения. Запускается graceful shutdown...")
+
+	// Завершение работы Consumer Service
+	cancel()
+
+	// Остановка HTTP-сервера
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("HTTP-сервер принудительно завершил работу: %v", err)
+	}
+
+	log.Println("Сервис завершил работу.")
 }

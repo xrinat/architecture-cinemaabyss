@@ -1,34 +1,32 @@
-# --- Этап сборки (Build Stage) ---
-# Используем базовый образ Golang с Alpine для небольшого размера
-FROM golang:1.23-alpine AS builder
-
+# Этап сборки (Builder Stage)
+# Используем образ Go 1.23
+FROM --platform=linux/amd64 golang:1.23-alpine AS build
 WORKDIR /app
 
-# Копируем go.mod и go.sum для кэширования зависимостей
+# Копируем go.mod и go.sum и загружаем зависимости
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Копируем исходный код
+# Копируем весь исходный код
 COPY . .
 
-# Компилируем приложение в статический бинарник
-# CGO_ENABLED=0 и флаги -ldflags '-s -w' уменьшают размер бинарника
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-s -w' -o events_service .
+# Собираем приложение
+# CGO_ENABLED=0 и static линковка для создания полностью статического бинарника
+# (это не строго обязательно, но хорошая практика для Alpine)
+RUN CGO_ENABLED=0 go build -o /app/events-service ./main.go
 
+# --- Этап запуска (Final Stage) ---
+# Используем минимальный образ Alpine
+FROM --platform=linux/amd64 alpine:latest AS final
+WORKDIR /app
 
-# --- Этап запуска (Run Stage) ---
-# Используем минимальный образ Alpine Linux
-FROM alpine:latest
-# Устанавливаем сертификаты CA для HTTPS-запросов
-RUN apk --no-cache add ca-certificates
+# Копируем собранный бинарник из этапа сборки
+COPY --from=build /app/events-service .
 
-WORKDIR /root/
-
-# Копируем скомпилированный бинарник из этапа сборки
-COPY --from=builder /app/events_service .
-
-# Открываем порт, который используется в Go-коде (8082)
+# Сервис запускается на порту 8082
+ENV ASPNETCORE_URLS=http://+:8082
+ENV PORT=8082
 EXPOSE 8082
 
-# Команда запуска
-CMD ["./events_service"]
+# Определение точки входа
+ENTRYPOINT ["/app/events-service"]
