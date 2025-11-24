@@ -35,11 +35,12 @@ jobs:
       
       - name: Start services with Docker Compose
         run: |
-          docker compose up -d
+          # Добавлен --build, чтобы собрать новые микросервисы (events, proxy)
+          docker compose up -d --build
           # Wait for services to be ready
           echo "Waiting for services to be ready..."
           sleep 120
-      
+          
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
@@ -51,21 +52,18 @@ jobs:
         working-directory: tests/postman
         run: npm install
       
-      - name: Run API tests
+      - name: Build API tests Docker image
         working-directory: tests/postman
-        run: |
-
-          docker compose up -d
-          # Wait for services to be ready
-          echo "Waiting for services to be ready..."
-          sleep 15
-          # Build the Docker image
-          docker build -t cinemaabyss-api-tests .
-          
-          # Run the tests in Docker
-          docker run --network=cinemaabyss-network -v "$(pwd)/reports:/app/reports" cinemaabyss-api-tests
-        
+        run: docker build -t cinemaabyss-api-tests .
       
+      - name: Run API tests in Docker container
+        run: |
+          docker run \
+            --network=$(docker network ls --filter name=cinemaabyss-network -q) \
+            -v "$(pwd)/tests/postman/reports:/app/reports" \
+            -e "NEWMAN_FOLDER=${{ github.event.inputs.test_folder }}" \
+            cinemaabyss-api-tests
+          
       - name: Stop services
         if: always()
         run: docker compose down

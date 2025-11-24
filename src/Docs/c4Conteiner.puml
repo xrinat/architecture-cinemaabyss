@@ -1,0 +1,45 @@
+﻿@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Контейнерная Диаграмма архитектуры КиноБездны
+
+System_Boundary(c1, "CinemaAbyss (To Be Architecture)") {
+
+    '1. Единая точка входа (Strangler Façade)
+    Container(proxy_service, "Proxy Service (API Gateway)", "Go", "Единая точка входа. Маршрутизация (в т.ч. процентная) запросов между Монолитом и Микросервисами.")
+    
+    Container(movies_service, "Movies Service", "Go", "Обработка фильмов, рейтингов, жанров. Извлечен из Монолита.")
+    Container(events_service, "Events Service", "Go", "HTTP-интерфейс для публикации событий (Просмотры, Платежи, Пользователи) в Kafka.")
+
+    Container(monolith, "Monolith", "", "Управляет Пользователями, Платежами, Подписками (оставшаяся функциональность).")
+    
+    ContainerQueue(kafka, "Apache Kafka", "Cluster", "Центральный брокер сообщений для асинхронного взаимодействия (EDA).")
+    ContainerDb(postgres, "PostgreSQL", "Database", "Хранилище данных для всех сервисов.")
+}
+
+'5. Внешние системы
+System_Ext(user, "Пользователь", "Web / Mobile Client")
+System_Ext(payment_gw, "Платежный Шлюз", "Внешний сервис для процессинга оплат.")
+System_Ext(ci_cd, "CI/CD Pipeline", "GitHub Actions")
+
+'1. Синхронное взаимодействие
+Rel(user, proxy_service, "Запросы (HTTP/REST)", "https://localhost:8000")
+
+'Strangler Fig Routing
+Rel(proxy_service, movies_service, "Маршрутизация фильмов", "Внутренний HTTP/HTTPS")
+Rel(proxy_service, monolith, "Маршрутизация пользователей/платежей/подписок", "Внутренний HTTP/HTTPS")
+
+'Персистентность
+Rel(monolith, postgres, "Чтение/Запись данных", "SQL")
+Rel(movies_service, postgres, "Чтение/Запись данных фильмов", "SQL (Возможно, общий инстанс на этапе миграции)")
+
+'2. Асинхронное взаимодействие (EDA)
+Rel(events_service, kafka, "Публикация / Потребление событий", "movie-events, user-events, payment-events")
+Rel(movies_service, kafka, "Публикация событий (например, 'Фильм обновлен')", "movie-events")
+
+'3. Внешние сервисы
+Rel(monolith, payment_gw, "Обработка платежей", "HTTPS/API")
+
+'4. CI/CD
+Rel(ci_cd, c1, "Развертывание через Kubernetes и Helm", "kubectl, helm")
+@enduml
