@@ -1,4 +1,4 @@
-﻿version: '3.8'
+version: '3.8'
 
 services:
   # PostgreSQL Database
@@ -28,21 +28,15 @@ services:
     container_name: cinemaabyss-zookeeper
     ports:
       - "2181:2181"
-    healthcheck:
-      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - cinemaabyss-network
 
-  # Kafka Broker
+  # Kafka
   kafka:
     image: wurstmeister/kafka:2.13-2.7.0
     container_name: cinemaabyss-kafka
     depends_on:
-      zookeeper:
-        condition: service_healthy
+      - zookeeper
     ports:
       - "9092:9092"
     environment:
@@ -53,11 +47,6 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 9092"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
     networks:
       - cinemaabyss-network
 
@@ -68,8 +57,7 @@ services:
       dockerfile: Dockerfile
     container_name: cinemaabyss-monolith
     depends_on:
-      postgres:
-        condition: service_healthy
+      - postgres
     ports:
       - "8080:8080"
     environment:
@@ -85,8 +73,7 @@ services:
       dockerfile: Dockerfile
     container_name: cinemaabyss-movies-service
     depends_on:
-      postgres:
-        condition: service_healthy
+      - postgres
     ports:
       - "8081:8081"
     environment:
@@ -102,8 +89,8 @@ services:
       dockerfile: Dockerfile
     container_name: cinemaabyss-events-service
     depends_on:
-      kafka:
-        condition: service_healthy
+      - postgres
+      - kafka
     ports:
       - "8082:8082"
     environment:
@@ -119,12 +106,9 @@ services:
       dockerfile: Dockerfile
     container_name: cinemaabyss-proxy-service
     depends_on:
-      monolith:
-        condition: service_started
-      movies-service:
-        condition: service_started
-      events-service:
-        condition: service_started
+      - monolith
+      - movies-service
+      - events-service
     ports:
       - "8000:8000"
     environment:
@@ -137,13 +121,12 @@ services:
     networks:
       - cinemaabyss-network
 
-  # Kafka UI
+  # Kafka UI for monitoring Kafka
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: cinemaabyss-kafka-ui
     depends_on:
-      kafka:
-        condition: service_healthy
+      - kafka
     ports:
       - "8090:8080"
     environment:
